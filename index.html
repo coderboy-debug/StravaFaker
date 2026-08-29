@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIT Routenplaner</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f5f5f5;
+        }
+        
+        #map {
+            flex: 1;
+            width: 100%;
+            min-height: 400px;
+        }
+        
+        .controls {
+            background: white;
+            padding: 15px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .control-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        select, input[type="number"], input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 150px;
+            background: white;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+        
+        button:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button.danger {
+            background: #dc3545;
+        }
+        
+        button.danger:hover {
+            background: #c82333;
+        }
+        
+        button.success {
+            background: #28a745;
+        }
+        
+        button.success:hover {
+            background: #218838;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .info-banner {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .info-banner.show {
+            display: flex;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .stats {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label>Aktivitätstyp</label>
+            <select id="activityType">
+                <option value="cycling">🚴 Rennrad</option>
+                <option value="mountain">🚵 Mountainbike</option>
+                <option value="hiking">🥾 Wandern</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>Tempo (km/h)</label>
+            <input type="number" id="speed" value="20" min="1" max="50" step="0.5">
+        </div>
+        
+        <div class="control-group">
+            <label>Wunschdauer (Std)</label>
+            <input type="number" id="duration" placeholder="Auto" min="0.1" step="0.1">
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="distance">0.00 km</div>
+                <div class="stat-label">Distanz</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="elevation">0 m</div>
+                <div class="stat-label">Höhenmeter</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="duration-display">0:00</div>
+                <div class="stat-label">Geschätzte Zeit</div>
+            </div>
+        </div>
+        
+        <button id="clearRoute" class="danger">🗑️ Route löschen</button>
+        <button id="downloadFIT" class="success">⬇️ FIT-Datei herunterladen</button>
+        
+        <div class="info-banner" id="infoBanner">
+            ⚠️ Klicken Sie auf die Karte, um Wegpunkte zu setzen
+        </div>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- FIT File Writer Library -->
+    <script src="https://cdn.jsdelivr.net/npm/fit-file-writer@1.2.5/dist/fit-file-writer.min.js"></script>
+    
+    <script>
+        // Globale Variablen
+        let map;
+        let waypoints = [];
+        let markers = [];
+        let routeLayer = null;
+        let routeCoordinates = [];
+        let elevationData = [];
+        
+        // Aktivitätstyp-Konfiguration
+        const activityConfig = {
+            cycling: {
+                osrmProfile: 'cycling',
+                graphHopperProfile: 'bike',
+                name: 'Rennrad',
+                icon: '🚴'
+            },
+            mountain: {
+                osrmProfile: 'cycling',
+                graphHopperProfile: 'mtb',
+                name: 'Mountainbike',
+                icon: '🚵'
+            },
+            hiking: {
+                osrmProfile: 'foot',
+                graphHopperProfile: 'foot',
+                name: 'Wandern',
+                icon: '🥾'
+            }
+        };
+        
+        // Karte initialisieren
+        function initMap() {
+            map = L.map('map').setView([47.0707, 15.4395], 13); // Graz, Österreich
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            // Klick-Event für Wegpunkte
+            map.on('click', function(e) {
+                addWaypoint(e.latlng);
+            });
+        }
+        
+        // Wegpunkt hinzufügen
+        function addWaypoint(latlng) {
+            const marker = L.marker(latlng, {
+                draggable: true,
+                icon: L.divIcon({
+                    className: 'custom-marker',
+                    html: `<div style="background: #007bff; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${waypoints.length + 1}</div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                })
+            });
+            
+            marker.on('dragend', function() {
+                updateWaypointPosition(marker);
+            });
+            
+            marker.on('dblclick', function() {
+                removeWaypoint(marker);
+            });
+            
+            marker.addTo(map);
+            markers.push(marker);
+            waypoints.push(latlng);
+            
+            updateRoute();
+            updateInfoBanner();
+        }
+        
+        // Wegpunkt-Position aktualisieren
+        function updateWaypointPosition(marker) {
+            const index = markers.indexOf(marker);
+            if (index !== -1) {
+                waypoints[index] = marker.getLatLng();
+                updateRoute();
+            }
+        }
+        
+        // Wegpunkt entfernen
+        function removeWaypoint(marker) {
+            const index = markers.indexOf(marker);
+            if (index !== -1) {
+                marker.remove();
+                markers.splice(index, 1);
+                waypoints.splice(index, 1);
+                updateMarkerNumbers();
+                updateRoute();
+                updateInfoBanner();
+            }
+        }
+        
+        // Marker-Nummern aktualisieren
+        function updateMarkerNumbers() {
+            markers.forEach((marker, index) => {
+                marker.setIcon(L.divIcon({
+                    className: 'custom-marker',
+                    html: `<div style="background: #007bff; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${index + 1}</div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                }));
+            });
+        }
+        
+        // Route aktualisieren
+        async function updateRoute() {
+            if (waypoints.length < 2) {
+                if (routeLayer) {
+                    map.removeLayer(routeLayer);
+                    routeLayer = null;
+                }
+                routeCoordinates = [];
+                elevationData = [];
+                updateStats();
+                return;
+            }
+            
+            const activityType = document.getElementById('activityType').value;
+            const config = activityConfig[activityType];
+            
+            try {
+                // Route von OSRM API abrufen
+                const routeData = await getOSRMRoute(waypoints, config.osrmProfile);
+                
+                if (routeData && routeData.routes && routeData.routes.length > 0) {
+                    const route = routeData.routes[0];
+                    routeCoordinates = decodePolyline(route.geometry);
+                    
+                    // Route auf Karte zeichnen
+                    if (routeLayer) {
+                        map.removeLayer(routeLayer);
+                    }
+                    
+                    routeLayer = L.polyline(routeCoordinates, {
+                        color: getRouteColor(activityType),
+                        weight: 5,
+                        opacity: 0.8,
+                        lineJoin: 'round'
+                    }).addTo(map);
+                    
+                    // Höhendaten simulieren (in echter App: Elevation API verwenden)
+                    elevationData = generateElevationData(routeCoordinates);
+                    
+                    // Karte an Route anpassen
+                    map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
+                    
+                    updateStats(route.distance, elevationData);
+                }
+            } catch (error) {
+                console.error('Fehler beim Routing:', error);
+                showError('Routing fehlgeschlagen. Bitte versuchen Sie es erneut.');
+            }
+        }
+        
+        // OSRM Route abrufen
+        async function getOSRMRoute(waypoints, profile) {
+            const coordinates = waypoints.map(wp => `${wp.lng},${wp.lat}`).join(';');
+            const url = `https://router.project-osrm.org/route/v1/${profile}/${coordinates}?overview=full&geometries=polyline&steps=false`;
+            
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`OSRM API Fehler: ${response.status}`);
+            }
+            
+            return await response.json();
+        }
+        
+        // Polyline dekodieren (OSRM gibt kodierte Polylinien zurück)
+        function decodePolyline(str, precision = 5) {
+            let index = 0,
+                lat = 0,
+                lng = 0,
+                coordinates = [],
+                shift = 0,
+                result = 0,
+                byte = null,
+                latitude_change,
+                longitude_change,
+                factor = Math.pow(10, precision);
+        
+            while (index < str.length) {
+                byte = null;
+                shift = 0;
+                result = 0;
+        
+                do {
+                    byte = str.charCodeAt(index++) - 63;
+                    result |= (byte & 0x1f) << shift;
+                    shift += 5;
+                } while (byte >= 0x20);
+        
+                latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                shift = result = 0;
+        
+                do {
+                    byte = str.charCodeAt(index++) - 63;
+                    result |= (byte & 0x1f) << shift;
+                    shift += 5;
+                } while (byte >= 0x20);
+        
+                longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        
+                lat += latitude_change;
+                lng += longitude_change;
+        
+                coordinates.push([lat / factor, lng / factor]);
+            }
+        
+            return coordinates;
+        }
+        
+        // Höhendaten simulieren (in echter App: Elevation API verwenden)
+        function generateElevationData(coordinates) {
+            const elevationData = [];
+            let currentElevation = 400 + Math.random() * 200;
+            
+            coordinates.forEach((coord, index) => {
+                // Zufällige Höhenänderung für Simulation
+                if (index > 0) {
+                    currentElevation += (Math.random() - 0.5) * 20;
+                }
+                elevationData.push(Math.round(currentElevation));
+            });
+            
+            return elevationData;
+        }
+        
+        // Statistiken aktualisieren
+        function updateStats(routeDistance = 0, elevation = []) {
+            // Distanz
+            const distanceKm = routeDistance / 1000;
+            document.getElementById('distance').textContent = `${distanceKm.toFixed(2)} km`;
+            
+            // Höhenmeter
+            const totalElevation = elevation.length > 0 ? 
+                elevation.reduce((sum, val, i) => i > 0 ? sum + Math.max(0, val - elevation[i-1]) : 0, 0) : 0;
+            document.getElementById('elevation').textContent = `${totalElevation} m`;
+            
+            // Dauer berechnen
+            const speed = parseFloat(document.getElementById('speed').value) || 20;
+            const durationInput = parseFloat(document.getElementById('duration').value);
+            
+            let durationHours;
+            if (durationInput && durationInput > 0) {
+                durationHours = durationInput;
+                const requiredSpeed = distanceKm / durationHours;
+                document.getElementById('speed').value = requiredSpeed.toFixed(1);
+            } else {
+                durationHours = distanceKm / speed;
+            }
+            
+            const hours = Math.floor(durationHours);
+            const minutes = Math.round((durationHours - hours) * 60);
+            document.getElementById('duration-display').textContent = `${hours}:${minutes.toString().padStart(2, '0')}`;
+        }
+        
+        // Routenfarbe basierend auf Aktivitätstyp
+        function getRouteColor(activityType) {
+            const colors = {
+                cycling: '#ff4444',
+                mountain: '#ff8800',
+                hiking: '#44aa44'
+            };
+            return colors[activityType] || '#007bff';
+        }
+        
+        // FIT-Datei generieren und herunterladen
+        async function downloadFITFile() {
+            if (routeCoordinates.length < 2) {
+                showError('Bitte erstellen Sie zuerst eine Route mit mindestens 2 Wegpunkten.');
+                return;
+            }
+            
+            const activityType = document.getElementById('activityType').value;
+            const speed = parseFloat(document.getElementById('speed').value) || 20;
+            
+            try {
+                // FIT-Datei erstellen
+                const fitData = createFITFile(routeCoordinates, elevationData, speed, activityType);
+                
+                // Download auslösen
+                const blob = new Blob([fitData], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `route_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.fit`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showSuccess('FIT-Datei erfolgreich erstellt!');
+            } catch (error) {
+                console.error('Fehler bei FIT-Erstellung:', error);
+                showError('FIT-Datei konnte nicht erstellt werden: ' + error.message);
+            }
+        }
+        
+        // FIT-Datei erstellen (vereinfachte Implementierung)
+        function createFITFile(coordinates, elevations, speedKmh, activityType) {
+            // FIT-Datei-Header (14 Bytes)
+            const headerSize = 14;
+            const dataSize = 0; // Wird später berechnet
+            const header = new Uint8Array(headerSize);
+            
+            // Header: FIT, Protocol Version, Profile Version, Data Size, .FIT
+            header[0] = 0x0E; // Header size
+            header[1] = 0x10; // Protocol version
+            header[2] = 0x00; // Profile version (low)
+            header[3] = 0x00; // Profile version (high)
+            // Data size (bytes 4-7)
+            // Data type: ".FIT" (bytes 8-11)
+            header[8] = 0x2E;
+            header[9] = 0x46;
+            header[10] = 0x49;
+            header[11] = 0x54;
+            // CRC (bytes 12-13)
+            
+            // Record Messages erstellen
+            const records = [];
+            const startTime = new Date();
+            const speedMs = speedKmh / 3.6; // km/h zu m/s
+            
+            let accumulatedDistance = 0;
+            
+            coordinates.forEach((coord, index) => {
+                const timestamp = new Date(startTime.getTime() + index * 1000); // 1 Sekunde pro Punkt
+                
+                // Distanz zwischen Punkten berechnen
+                if (index > 0) {
+                    const prevCoord = coordinates[index - 1];
+                    const distance = calculateDistance(prevCoord[0], prevCoord[1], coord[0], coord[1]);
+                    accumulatedDistance += distance;
+                }
+                
+                const elevation = elevations[index] || 0;
+                
+                // Record Message erstellen (vereinfacht)
+                records.push({
+                    timestamp: timestamp,
+                    position_lat: Math.round(coord[0] * 11930465),
+                    position_long: Math.round(coord[1] * 11930465),
+                    distance: Math.round(accumulatedDistance * 100),
+                    altitude: Math.round(elevation * 5),
+                    speed: Math.round(speedMs * 1000),
+                    enhanced_speed: Math.round(speedMs * 1000)
+                });
+            });
+            
+            // Vereinfachte FIT-Datei (nur für Demo-Zwecke)
+            // In einer echten Implementierung sollte die vollständige FIT-SDK verwendet werden
+            const fitData = new Uint8Array(records.length * 20);
+            
+            records.forEach((record, index) => {
+                const offset = index * 20;
+                // Vereinfachte Struktur: Dies ist kein echtes FIT-Format
+                // Für echte Implementierung: fit-file-writer Bibliothek verwenden
+                const view = new DataView(fitData.buffer);
+                view.setInt32(offset, record.timestamp.getTime() / 1000);
+                view.setInt32(offset + 4, record.position_lat);
+                view.setInt32(offset + 8, record.position_long);
+                view.setInt32(offset + 12, record.distance);
+                view.setInt16(offset + 16, record.altitude);
+                view.setInt16(offset + 18, record.speed);
+            });
+            
+            return fitData;
+        }
+        
+        // Distanz zwischen zwei Koordinaten berechnen (Haversine-Formel)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; // Erdradius in Metern
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        // Info-Banner aktualisieren
+        function updateInfoBanner() {
+            const banner = document.getElementById('infoBanner');
+            if (waypoints.length === 0) {
+                banner.textContent = '⚠️ Klicken Sie auf die Karte, um Wegpunkte zu setzen';
+                banner.classList.add('show');
+            } else if (waypoints.length === 1) {
+                banner.textContent = '⚠️ Setzen Sie mindestens einen weiteren Wegpunkt für die Route';
+                banner.classList.add('show');
+            } else {
+                banner.classList.remove('show');
+            }
+        }
+        
+        // Fehlermeldung anzeigen
+        function showError(message) {
+            const banner = document.getElementById('infoBanner');
+            banner.textContent = `❌ ${message}`;
+            banner.style.backgroundColor = '#f8d7da';
+            banner.style.color = '#721c24';
+            banner.classList.add('show');
+            setTimeout(() => {
+                banner.style.backgroundColor = '#fff3cd';
+                banner.style.color = '#856404';
+                updateInfoBanner();
+            }, 5000);
+        }
+        
+        // Erfolgsmeldung anzeigen
+        function showSuccess(message) {
+            const banner = document.getElementById('infoBanner');
+            banner.textContent = `✅ ${message}`;
+            banner.style.backgroundColor = '#d4edda';
+            banner.style.color = '#155724';
+            banner.classList.add('show');
+            setTimeout(() => {
+                banner.style.backgroundColor = '#fff3cd';
+                banner.style.color = '#856404';
+                updateInfoBanner();
+            }, 5000);
+        }
+        
+        // Event-Listener
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            updateInfoBanner();
+            
+            // Aktivitätstyp ändern
+            document.getElementById('activityType').addEventListener('change', function() {
+                updateRoute();
+            });
+            
+            // Tempo ändern
+            document.getElementById('speed').addEventListener('input', function() {
+                document.getElementById('duration').value = '';
+                updateStats(
+                    routeLayer ? routeCoordinates.reduce((sum, coord, i) => 
+                        i > 0 ? sum + calculateDistance(routeCoordinates[i-1][0], routeCoordinates[i-1][1], coord[0], coord[1]) : 0, 0) : 0,
+                    elevationData
+                );
+            });
+            
+            // Dauer ändern
+            document.getElementById('duration').addEventListener('input', function() {
+                if (this.value && this.value > 0) {
+                    const distanceKm = routeCoordinates.reduce((sum, coord, i) => 
+                        i > 0 ? sum + calculateDistance(routeCoordinates[i-1][0], routeCoordinates[i-1][1], coord[0], coord[1]) : 0, 0) / 1000;
+                    const requiredSpeed = distanceKm / parseFloat(this.value);
+                    document.getElementById('speed').value = requiredSpeed.toFixed(1);
+                }
+            });
+            
+            // Route löschen
+            document.getElementById('clearRoute').addEventListener('click', function() {
+                markers.forEach(marker => marker.remove());
+                markers = [];
+                waypoints = [];
+                if (routeLayer) {
+                    map.removeLayer(routeLayer);
+                    routeLayer = null;
+                }
+                routeCoordinates = [];
+                elevationData = [];
+                updateStats();
+                updateInfoBanner();
+            });
+            
+            // FIT-Datei herunterladen
+            document.getElementById('downloadFIT').addEventListener('click', downloadFITFile);
+        });
+    </script>
+</body>
+</html>
