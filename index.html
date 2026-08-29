@@ -1,239 +1,606 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Routenplaner & Fake-Aktivität Generator</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <style>
-        body { margin: 0; display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        #sidebar { width: 320px; padding: 20px; background: #f8f9fa; box-sizing: border-box; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.1); z-index: 1000; }
-        #map { flex-grow: 1; }
-        h2 { margin-top: 0; font-size: 1.2rem; }
-        label { font-size: 0.9rem; font-weight: bold; margin-top: 10px; display: block; }
-        select, input, button { width: 100%; margin-top: 5px; margin-bottom: 15px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
-        button.danger { background: #dc3545; }
-        button.danger:hover { background: #c82333; }
-        .stats { background: #fff; padding: 15px; border-radius: 6px; border: 1px solid #ddd; margin-bottom: 15px; }
-        .stat-value { font-size: 1.4rem; font-weight: bold; color: #333; }
-        .help-text { font-size: 0.8rem; color: #666; margin-top: -10px; margin-bottom: 15px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Routenplaner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --accent:#e63946;
+    --accent-dark:#c62834;
+    --bg:#f7f7f9;
+    --panel:#ffffff;
+    --border:#e2e2e6;
+    --text:#222;
+    --muted:#6b6b75;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--text);background:var(--bg);}
+  #app{display:flex;height:100vh;width:100vw;overflow:hidden;}
+  #sidebar{
+    width:340px;min-width:340px;background:var(--panel);border-right:1px solid var(--border);
+    padding:16px;overflow-y:auto;z-index:1000;
+  }
+  #map{flex:1;height:100%;}
+  h1{font-size:18px;margin:0 0 4px 0;}
+  .hint{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.4;}
+  .section{margin-bottom:18px;}
+  .section-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:8px;}
+  .mode-row{display:flex;gap:6px;}
+  .mode-btn{
+    flex:1;padding:8px 4px;font-size:12.5px;border:1px solid var(--border);background:#fff;
+    border-radius:8px;cursor:pointer;text-align:center;transition:all .15s;
+  }
+  .mode-btn.active{background:var(--accent);color:#fff;border-color:var(--accent-dark);}
+  .mode-info{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;}
+  .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .stat-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px;}
+  .stat-label{font-size:11px;color:var(--muted);}
+  .stat-value{font-size:18px;font-weight:600;margin-top:2px;}
+  label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px;margin-top:10px;}
+  input[type=number],input[type=datetime-local]{
+    width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:14px;
+  }
+  .time-display{font-size:13px;margin-top:6px;color:var(--text);}
+  .btn{
+    width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff;
+    font-size:13.5px;cursor:pointer;margin-top:8px;
+  }
+  .btn:hover{background:#f0f0f2;}
+  .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent-dark);font-weight:600;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-row{display:flex;gap:8px;}
+  .btn-row .btn{margin-top:0;}
+  #loadingMsg{font-size:12px;color:var(--accent-dark);margin-top:6px;display:none;}
+  .disclaimer{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:20px;padding-top:12px;border-top:1px solid var(--border);}
+  .wp-marker-inner{
+    background:var(--accent);color:#fff;border-radius:50%;width:26px;height:26px;
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+    border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);
+  }
+  .del-btn{padding:4px 8px;border:none;background:var(--accent);color:#fff;border-radius:6px;cursor:pointer;font-size:12px;}
+  @media (max-width:720px){
+    #app{flex-direction:column;}
+    #sidebar{width:100%;min-width:0;max-height:46vh;border-right:none;border-bottom:1px solid var(--border);}
+    #map{flex:1;}
+  }
+</style>
 </head>
 <body>
+<div id="app">
+  <div id="sidebar">
+    <h1>Routenplaner</h1>
+    <div class="hint">Klicke auf die Karte, um Wegpunkte zu setzen. Ziehe Markierungen, um die Route anzupassen. Klick auf einen Marker öffnet die Löschen-Option.</div>
 
-    <div id="sidebar">
-        <h2>Routenplaner</h2>
-        <p class="help-text">Klicke auf die Karte, um Wegpunkte zu setzen. Marker sind per Drag & Drop verschiebbar.</p>
-
-        <label for="profile">Wegtyp:</label>
-        <select id="profile" onchange="updateRoute()">
-            <option value="cycling">Rennrad / MTB (Fahrrad)</option>
-            <option value="foot">Wandern (Fußweg)</option>
-        </select>
-
-        <label for="speed">Ziel-Geschwindigkeit (km/h):</label>
-        <input type="number" id="speed" value="25" min="1" max="100" oninput="updateStats()">
-
-        <div class="stats">
-            <label>Distanz:</label>
-            <div class="stat-value"><span id="distance">0.00</span> km</div>
-            
-            <label>Geschätzte Dauer:</label>
-            <div class="stat-value"><span id="duration">00:00:00</span></div>
-            
-            <p style="font-size: 0.7rem; color: #888; margin-top:10px;">Höhenmeter sind via OSRM Demo-API nicht verfügbar.</p>
-        </div>
-
-        <button onclick="exportActivity()">Als TCX exportieren (Strava)</button>
-        <button class="danger" onclick="clearRoute()">Route löschen</button>
+    <div class="section">
+      <div class="section-title">Wegtyp</div>
+      <div class="mode-row">
+        <div class="mode-btn active" data-mode="road">Rennrad</div>
+        <div class="mode-btn" data-mode="mountain">Mountainbike</div>
+        <div class="mode-btn" data-mode="foot">Wandern</div>
+      </div>
+      <div class="mode-info" id="modeInfo"></div>
+      <div id="loadingMsg">Route wird berechnet ...</div>
     </div>
 
-    <div id="map"></div>
+    <div class="section">
+      <div class="section-title">Strecke</div>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">Distanz</div>
+          <div class="stat-value" id="distValue">0 km</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Höhenmeter (Anstieg)</div>
+          <div class="stat-value" id="eleValue">-</div>
+        </div>
+      </div>
+    </div>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script>
-        // Startkoordinaten: Zentriert auf Rosenheim
-        const map = L.map('map').setView([47.8561, 12.1289], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+    <div class="section">
+      <div class="section-title">Tempo &amp; Dauer</div>
+      <label for="speedInput">Durchschnittsgeschwindigkeit (km/h)</label>
+      <input type="number" id="speedInput" min="0.5" step="0.5" value="25">
+      <label for="durationInput">Wunschdauer (Minuten)</label>
+      <input type="number" id="durationInput" min="1" step="1">
+      <div class="time-display">Geschätzte Gesamtzeit: <b id="timeDisplay">-</b></div>
+    </div>
 
-        let markers = [];
-        let routeLayer = null;
-        let routeCoordinates = []; // Für den TCX Export
-        let totalDistanceKm = 0;
+    <div class="section">
+      <div class="section-title">Aktivität</div>
+      <label for="startTime">Startzeitpunkt (für FIT-Datei)</label>
+      <input type="datetime-local" id="startTime">
+    </div>
 
-        // Klick-Event für die Karte
-        map.on('click', function(e) {
-            addMarker(e.latlng);
-        });
+    <div class="section">
+      <div class="btn-row">
+        <button class="btn" id="undoBtn">Letzten Punkt entfernen</button>
+        <button class="btn" id="clearBtn">Route löschen</button>
+      </div>
+      <button class="btn btn-primary" id="exportBtn" disabled>Als .FIT-Datei exportieren</button>
+    </div>
 
-        function addMarker(latlng) {
-            const marker = L.marker(latlng, { draggable: true }).addTo(map);
-            markers.push(marker);
+    <div class="disclaimer">
+      Routing über den freien OSRM-Demo-Server (routing.openstreetmap.de) und Höhendaten über die freie Open-Elevation-API - beides ohne Garantie auf Verfügbarkeit/Geschwindigkeit. "Mountainbike" nutzt mangels eigenem MTB-Profil auf dem Demo-Server ebenfalls das Rad-Profil. Höhenmeter sind eine Schätzung anhand abgetasteter Streckenpunkte. Die FIT-Datei enthält eine simulierte Aktivität mit künstlichen, gleichmäßig verteilten Zeitstempeln entlang der berechneten Route.
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
 
-            marker.on('dragend', function() {
-                updateRoute();
-            });
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ===================== Konfiguration ===================== */
+const MODES = {
+  road:     { label:'Rennrad',      api:'https://routing.openstreetmap.de/routed-bike/route/v1/bike/', defaultSpeed:25,  sport:2,  subSport:7,
+              info:'Straßenrouting über das freie Rad-Profil.' },
+  mountain: { label:'Mountainbike', api:'https://routing.openstreetmap.de/routed-bike/route/v1/bike/', defaultSpeed:16,  sport:2,  subSport:8,
+              info:'Nutzt ebenfalls das Rad-Profil des Demo-Servers (kein separates Trail/Schotter-Profil frei verfügbar).' },
+  foot:     { label:'Wandern',      api:'https://routing.openstreetmap.de/routed-foot/route/v1/foot/', defaultSpeed:4.5, sport:17, subSport:0,
+              info:'Routing über Fuß-/Wanderwege.' }
+};
+const OPEN_ELEVATION_URL = 'https://api.open-elevation.com/api/v1/lookup';
 
-            updateRoute();
+/* ===================== Zustand ===================== */
+let map, waypoints = [], nextId = 0;
+let routeLine = null, routeGeometry = null, cumDist = null, elevFull = null;
+let routeDistanceM = 0, currentMode = 'road', lastEdited = 'speed', boundsFitted = false;
+
+/* ===================== Karte ===================== */
+function initMap(){
+  map = L.map('map').setView([51.1657, 10.4515], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende'
+  }).addTo(map);
+  map.on('click', e => addWaypoint(e.latlng));
+
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(
+      pos => map.setView([pos.coords.latitude, pos.coords.longitude], 13),
+      () => {}
+    );
+  }
+}
+
+function makeIcon(num){
+  return L.divIcon({
+    className: 'wp-icon',
+    html: `<div class="wp-marker-inner">${num}</div>`,
+    iconSize: [26,26],
+    iconAnchor: [13,13]
+  });
+}
+
+function addWaypoint(latlng){
+  const id = nextId++;
+  const marker = L.marker(latlng, { draggable:true, icon: makeIcon(waypoints.length+1) }).addTo(map);
+  marker.bindPopup(`<button class="del-btn" onclick="window.removeWaypoint(${id})">Punkt entfernen</button>`);
+  marker.on('dragend', () => {
+    const wp = waypoints.find(w => w.id === id);
+    const ll = marker.getLatLng();
+    wp.lat = ll.lat; wp.lng = ll.lng;
+    updateRoute();
+  });
+  waypoints.push({ id, lat: latlng.lat, lng: latlng.lng, marker });
+  renumberMarkers();
+  updateRoute();
+}
+
+window.removeWaypoint = function(id){
+  const idx = waypoints.findIndex(w => w.id === id);
+  if(idx === -1) return;
+  map.removeLayer(waypoints[idx].marker);
+  waypoints.splice(idx, 1);
+  renumberMarkers();
+  updateRoute();
+};
+
+function renumberMarkers(){
+  waypoints.forEach((w,i) => w.marker.setIcon(makeIcon(i+1)));
+}
+
+function removeLastWaypoint(){
+  if(waypoints.length === 0) return;
+  window.removeWaypoint(waypoints[waypoints.length-1].id);
+}
+
+function clearRoute(){
+  waypoints.forEach(w => map.removeLayer(w.marker));
+  waypoints = [];
+  if(routeLine){ map.removeLayer(routeLine); routeLine = null; }
+  routeGeometry = null; cumDist = null; elevFull = null; routeDistanceM = 0;
+  boundsFitted = false;
+  document.getElementById('distValue').textContent = '0 km';
+  document.getElementById('eleValue').textContent = '-';
+  document.getElementById('timeDisplay').textContent = '-';
+  document.getElementById('durationInput').value = '';
+  document.getElementById('exportBtn').disabled = true;
+}
+
+/* ===================== Routing ===================== */
+async function updateRoute(){
+  const exportBtn = document.getElementById('exportBtn');
+  if(waypoints.length < 2){
+    if(routeLine){ map.removeLayer(routeLine); routeLine = null; }
+    routeGeometry = null; cumDist = null; elevFull = null; routeDistanceM = 0;
+    document.getElementById('distValue').textContent = '0 km';
+    document.getElementById('eleValue').textContent = '-';
+    document.getElementById('timeDisplay').textContent = '-';
+    exportBtn.disabled = true;
+    return;
+  }
+  const coords = waypoints.map(w => `${w.lng},${w.lat}`).join(';');
+  const url = `${MODES[currentMode].api}${coords}?overview=full&geometries=geojson&steps=false`;
+  const loadingMsg = document.getElementById('loadingMsg');
+  loadingMsg.style.display = 'block';
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.code !== 'Ok') throw new Error(data.message || 'Routing fehlgeschlagen');
+    const route = data.routes[0];
+    routeGeometry = route.geometry.coordinates.map(c => [c[1], c[0]]);
+    cumDist = computeCumDist(routeGeometry);
+    routeDistanceM = cumDist[cumDist.length-1];
+    elevFull = null;
+    document.getElementById('eleValue').textContent = 'lädt ...';
+    drawRouteLine(routeGeometry);
+    document.getElementById('distValue').textContent = (routeDistanceM/1000).toFixed(2) + ' km';
+    recalcTimeSpeed();
+    exportBtn.disabled = false;
+    fetchElevation();
+  }catch(err){
+    alert('Route konnte nicht berechnet werden: ' + err.message);
+  }finally{
+    loadingMsg.style.display = 'none';
+  }
+}
+
+function drawRouteLine(geom){
+  if(routeLine) map.removeLayer(routeLine);
+  routeLine = L.polyline(geom, { color:'#e63946', weight:5, opacity:0.85 }).addTo(map);
+  if(!boundsFitted){
+    map.fitBounds(routeLine.getBounds(), { padding:[40,40] });
+    boundsFitted = true;
+  }
+}
+
+function computeCumDist(geom){
+  const cum = [0];
+  for(let i=1;i<geom.length;i++) cum.push(cum[i-1] + haversine(geom[i-1], geom[i]));
+  return cum;
+}
+
+function haversine(a,b){
+  const R = 6371000;
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(b[0]-a[0]), dLon = toRad(b[1]-a[1]);
+  const lat1 = toRad(a[0]), lat2 = toRad(b[0]);
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/* ===================== Höhendaten ===================== */
+function sampleIndices(len, maxPoints){
+  if(len <= maxPoints) return Array.from({length:len}, (_,i)=>i);
+  const idxs = [];
+  const step = (len-1) / (maxPoints-1);
+  for(let i=0;i<maxPoints;i++) idxs.push(Math.round(i*step));
+  return [...new Set(idxs)];
+}
+
+async function fetchElevation(){
+  if(!routeGeometry) return;
+  const idxs = sampleIndices(routeGeometry.length, 100);
+  const pts = idxs.map(i => routeGeometry[i]);
+  try{
+    const res = await fetch(OPEN_ELEVATION_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ locations: pts.map(p => ({ latitude:p[0], longitude:p[1] })) })
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const sampledEle = data.results.map(r => r.elevation);
+    const full = new Array(routeGeometry.length).fill(null);
+    idxs.forEach((idx,k) => full[idx] = sampledEle[k]);
+    let lastIdx = 0, lastVal = full[0];
+    for(let i=1;i<full.length;i++){
+      if(full[i] != null){
+        const gapLen = i - lastIdx;
+        for(let j=lastIdx+1;j<i;j++){
+          const frac = (j-lastIdx)/gapLen;
+          full[j] = lastVal + (full[i]-lastVal)*frac;
         }
+        lastIdx = i; lastVal = full[i];
+      }
+    }
+    elevFull = full;
+    const gain = computeGain(full);
+    document.getElementById('eleValue').textContent = Math.round(gain) + ' m';
+  }catch(err){
+    elevFull = null;
+    document.getElementById('eleValue').textContent = 'nicht verfügbar';
+  }
+}
 
-        function clearRoute() {
-            markers.forEach(marker => map.removeLayer(marker));
-            markers = [];
-            if (routeLayer) map.removeLayer(routeLayer);
-            routeCoordinates = [];
-            totalDistanceKm = 0;
-            updateStats();
-        }
+function computeGain(arr){
+  let g = 0;
+  for(let i=1;i<arr.length;i++){
+    const d = arr[i]-arr[i-1];
+    if(d > 0.5) g += d;
+  }
+  return g;
+}
 
-        async function updateRoute() {
-            if (markers.length < 2) {
-                if (routeLayer) map.removeLayer(routeLayer);
-                routeCoordinates = [];
-                totalDistanceKm = 0;
-                updateStats();
-                return;
-            }
+/* ===================== Tempo / Dauer ===================== */
+const speedInput = () => document.getElementById('speedInput');
+const durationInput = () => document.getElementById('durationInput');
 
-            const profile = document.getElementById('profile').value;
-            // OSRM erwartet Koordinaten im Format "lng,lat;lng,lat"
-            const coordsString = markers.map(m => {
-                const pos = m.getLatLng();
-                return `${pos.lng},${pos.lat}`;
-            }).join(';');
+function recalcTimeSpeed(){
+  const distKm = routeDistanceM / 1000;
+  if(distKm <= 0) return;
+  if(lastEdited === 'speed'){
+    const speed = parseFloat(speedInput().value) || 0;
+    if(speed > 0) durationInput().value = Math.round(distKm/speed*60);
+  }else{
+    const minutes = parseFloat(durationInput().value) || 0;
+    if(minutes > 0) speedInput().value = (distKm/(minutes/60)).toFixed(1);
+  }
+  updateTimeDisplay();
+}
 
-            const url = `https://router.project-osrm.org/route/v1/${profile}/${coordsString}?overview=full&geometries=geojson`;
+function updateTimeDisplay(){
+  const minutes = parseFloat(durationInput().value);
+  const el = document.getElementById('timeDisplay');
+  if(!minutes || minutes <= 0){ el.textContent = '-'; return; }
+  const h = Math.floor(minutes/60), m = Math.round(minutes%60);
+  el.textContent = `${h} h ${m.toString().padStart(2,'0')} min`;
+}
 
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
+/* ===================== FIT-Export ===================== */
+const FIT_EPOCH = 631065600; // Sekunden zwischen 1970-01-01 und 1989-12-31
+const T_ENUM=0x00, T_UINT8=0x02, T_UINT16=0x84, T_UINT32=0x86, T_SINT32=0x85;
 
-                if (data.code === 'Ok') {
-                    if (routeLayer) map.removeLayer(routeLayer);
+function toFitTimestamp(date){ return Math.floor(date.getTime()/1000) - FIT_EPOCH; }
+function degToSemicircle(deg){ return Math.round(deg * (Math.pow(2,31)/180)); }
 
-                    const geojson = data.routes[0].geometry;
-                    routeCoordinates = geojson.coordinates; // Array von [lng, lat]
-                    totalDistanceKm = data.routes[0].distance / 1000; // OSRM liefert Meter
+function pushU8(arr,v){ arr.push(v & 0xFF); }
+function pushU16(arr,v){ arr.push(v & 0xFF, (v>>>8) & 0xFF); }
+function pushU32(arr,v){ arr.push(v & 0xFF, (v>>>8) & 0xFF, (v>>>16) & 0xFF, (v>>>24) & 0xFF); }
+function pushS32(arr,v){ pushU32(arr, v >>> 0); }
 
-                    // Route zeichnen
-                    routeLayer = L.geoJSON(geojson, {
-                        style: { color: '#ff4b4b', weight: 4, opacity: 0.8 }
-                    }).addTo(map);
+function defineMsg(arr, localType, globalNum, fields){
+  arr.push(0x40 | localType, 0, 0);
+  pushU16(arr, globalNum);
+  arr.push(fields.length);
+  for(const f of fields) arr.push(f[0], f[1], f[2]);
+}
 
-                    updateStats();
-                }
-            } catch (error) {
-                console.error("Fehler beim Abrufen der Route:", error);
-            }
-        }
+const CRC_TABLE = [0x0000,0xCC01,0xD801,0x1400,0xF001,0x3C00,0x2800,0xE401,
+                    0xA001,0x6C00,0x7800,0xB401,0x5000,0x9C01,0x8801,0x4400];
+function crc16Step(crc, byte){
+  let tmp = CRC_TABLE[crc & 0xF];
+  crc = (crc >> 4) & 0x0FFF;
+  crc = crc ^ tmp ^ CRC_TABLE[byte & 0xF];
+  tmp = CRC_TABLE[crc & 0xF];
+  crc = (crc >> 4) & 0x0FFF;
+  crc = crc ^ tmp ^ CRC_TABLE[(byte >> 4) & 0xF];
+  return crc & 0xFFFF;
+}
+function computeCrc(bytes){
+  let crc = 0;
+  for(const b of bytes) crc = crc16Step(crc, b);
+  return crc;
+}
 
-        function updateStats() {
-            document.getElementById('distance').innerText = totalDistanceKm.toFixed(2);
-            
-            const speedKmh = parseFloat(document.getElementById('speed').value);
-            if (!speedKmh || speedKmh <= 0 || totalDistanceKm === 0) {
-                document.getElementById('duration').innerText = "00:00:00";
-                return;
-            }
+function interpAt(geom, cum, d){
+  const total = cum[cum.length-1];
+  if(d <= 0) return [geom[0][0], geom[0][1], 0, 0, 0];
+  if(d >= total) return [geom[geom.length-1][0], geom[geom.length-1][1], geom.length-1, geom.length-1, 0];
+  let lo = 0, hi = cum.length-1;
+  while(lo < hi-1){
+    const mid = (lo+hi) >> 1;
+    if(cum[mid] <= d) lo = mid; else hi = mid;
+  }
+  const segLen = cum[hi]-cum[lo];
+  const frac = segLen > 0 ? (d-cum[lo])/segLen : 0;
+  const lat = geom[lo][0] + (geom[hi][0]-geom[lo][0])*frac;
+  const lng = geom[lo][1] + (geom[hi][1]-geom[lo][1])*frac;
+  return [lat, lng, lo, hi, frac];
+}
 
-            const durationHours = totalDistanceKm / speedKmh;
-            const h = Math.floor(durationHours);
-            const m = Math.floor((durationHours - h) * 60);
-            const s = Math.floor((((durationHours - h) * 60) - m) * 60);
+function elevAt(elevArr, lo, hi, frac){
+  if(!elevArr) return null;
+  const a = elevArr[lo], b = elevArr[hi];
+  if(a == null || b == null) return null;
+  return a + (b-a)*frac;
+}
 
-            document.getElementById('duration').innerText = 
-                `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-        }
+function generateTrackPoints(speedKmh){
+  const speed = speedKmh/3.6;
+  if(speed <= 0 || !cumDist) return [];
+  const total = cumDist[cumDist.length-1];
+  const totalTime = total/speed;
+  let interval = 10;
+  if(totalTime > 0 && totalTime/interval > 8000) interval = totalTime/8000;
+  const pts = [];
+  for(let t=0; t<totalTime; t+=interval){
+    const d = speed*t;
+    const [lat,lng,lo,hi,frac] = interpAt(routeGeometry, cumDist, d);
+    const ele = elevAt(elevFull, lo, hi, frac);
+    pts.push({ t, dist:d, lat, lng, ele });
+  }
+  const last = routeGeometry[routeGeometry.length-1];
+  const finalEle = elevFull ? elevFull[elevFull.length-1] : null;
+  pts.push({ t: totalTime, dist: total, lat: last[0], lng: last[1], ele: finalEle });
+  return pts;
+}
 
-        // Haversine-Formel zur Distanzberechnung zwischen zwei Koordinaten
-        function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // Erdradius in Metern
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = 
-                Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
-        }
+function buildFitFile(trackPoints, meta){
+  const data = [];
+  const startFitTs = toFitTimestamp(meta.startDate);
+  const hasEle = meta.hasElevation;
 
-        function exportActivity() {
-            if (routeCoordinates.length === 0) {
-                alert("Bitte setze zuerst mindestens zwei Wegpunkte auf der Karte.");
-                return;
-            }
+  // file_id
+  defineMsg(data, 0, 0, [[0,1,T_ENUM],[1,2,T_UINT16],[2,2,T_UINT16],[3,4,T_UINT32],[4,4,T_UINT32]]);
+  data.push(0);
+  pushU8(data,4);
+  pushU16(data,255);
+  pushU16(data,0);
+  pushU32(data, Math.floor(Math.random()*0xFFFFFFFF));
+  pushU32(data, startFitTs);
 
-            const speedKmh = parseFloat(document.getElementById('speed').value);
-            if (!speedKmh || speedKmh <= 0) {
-                alert("Bitte eine gültige Geschwindigkeit eingeben.");
-                return;
-            }
-            const speedMs = speedKmh / 3.6; 
-            const profile = document.getElementById('profile').value;
-            const sportType = profile === 'cycling' ? 'Biking' : 'Running'; // TCX Sport Types
+  // event start
+  defineMsg(data, 1, 21, [[253,4,T_UINT32],[0,1,T_ENUM],[1,1,T_ENUM]]);
+  data.push(1);
+  pushU32(data, startFitTs);
+  pushU8(data,0);
+  pushU8(data,0);
 
-            let startTime = new Date();
-            let currentTime = new Date(startTime.getTime());
-            let cumulativeDistance = 0;
+  // record definition
+  const recFields = [[253,4,T_UINT32],[0,4,T_SINT32],[1,4,T_SINT32],[5,4,T_UINT32],[6,2,T_UINT16]];
+  if(hasEle) recFields.push([2,2,T_UINT16]);
+  defineMsg(data, 2, 20, recFields);
 
-            let tcxHeader = `<?xml version="1.0" encoding="UTF-8"?>
-<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
-  <Activities>
-    <Activity Sport="${sportType}">
-      <Id>${startTime.toISOString()}</Id>
-      <Lap StartTime="${startTime.toISOString()}">
-        <Track>\n`;
+  for(const p of trackPoints){
+    data.push(2);
+    pushU32(data, startFitTs + Math.round(p.t));
+    pushS32(data, degToSemicircle(p.lat));
+    pushS32(data, degToSemicircle(p.lng));
+    pushU32(data, Math.round(p.dist*100));
+    pushU16(data, Math.round(meta.speedMs*1000));
+    if(hasEle){
+      const eleVal = p.ele != null ? p.ele : 0;
+      pushU16(data, Math.max(0, Math.min(65534, Math.round((eleVal+500)*5))));
+    }
+  }
 
-            let tcxBody = "";
+  const lastT = trackPoints[trackPoints.length-1].t;
+  const endFitTs = startFitTs + Math.round(lastT);
+  const totalDistCm = Math.round(trackPoints[trackPoints.length-1].dist*100);
 
-            for (let i = 0; i < routeCoordinates.length; i++) {
-                const lng = routeCoordinates[i][0];
-                const lat = routeCoordinates[i][1];
+  // event stop
+  defineMsg(data, 1, 21, [[253,4,T_UINT32],[0,1,T_ENUM],[1,1,T_ENUM]]);
+  data.push(1);
+  pushU32(data, endFitTs);
+  pushU8(data,0);
+  pushU8(data,4);
 
-                if (i > 0) {
-                    const prevLng = routeCoordinates[i-1][0];
-                    const prevLat = routeCoordinates[i-1][1];
-                    const dist = getDistanceFromLatLonInMeters(prevLat, prevLng, lat, lng);
-                    
-                    cumulativeDistance += dist;
-                    // Zeit hinzufügen basierend auf exakter Distanz zwischen den Punkten
-                    const timeToAddMs = (dist / speedMs) * 1000;
-                    currentTime = new Date(currentTime.getTime() + timeToAddMs);
-                }
+  // lap
+  defineMsg(data, 3, 19, [[253,4,T_UINT32],[2,4,T_UINT32],[7,4,T_UINT32],[8,4,T_UINT32],[9,4,T_UINT32]]);
+  data.push(3);
+  pushU32(data, endFitTs);
+  pushU32(data, startFitTs);
+  pushU32(data, Math.round(lastT*1000));
+  pushU32(data, Math.round(lastT*1000));
+  pushU32(data, totalDistCm);
 
-                tcxBody += `          <Trackpoint>
-            <Time>${currentTime.toISOString()}</Time>
-            <Position>
-              <LatitudeDegrees>${lat}</LatitudeDegrees>
-              <LongitudeDegrees>${lng}</LongitudeDegrees>
-            </Position>
-            <DistanceMeters>${cumulativeDistance.toFixed(2)}</DistanceMeters>
-          </Trackpoint>\n`;
-            }
+  // session
+  defineMsg(data, 4, 18, [[253,4,T_UINT32],[2,4,T_UINT32],[5,1,T_ENUM],[6,1,T_ENUM],[7,4,T_UINT32],[8,4,T_UINT32],[9,4,T_UINT32]]);
+  data.push(4);
+  pushU32(data, endFitTs);
+  pushU32(data, startFitTs);
+  pushU8(data, meta.sport);
+  pushU8(data, meta.subSport);
+  pushU32(data, Math.round(lastT*1000));
+  pushU32(data, Math.round(lastT*1000));
+  pushU32(data, totalDistCm);
 
-            let tcxFooter = `        </Track>
-      </Lap>
-    </Activity>
-  </Activities>
-</TrainingCenterDatabase>`;
+  // activity
+  defineMsg(data, 5, 34, [[253,4,T_UINT32],[0,4,T_UINT32],[1,2,T_UINT16],[2,1,T_ENUM],[3,1,T_ENUM],[4,1,T_ENUM],[5,4,T_UINT32]]);
+  data.push(5);
+  pushU32(data, endFitTs);
+  pushU32(data, Math.round(lastT*1000));
+  pushU16(data,1);
+  pushU8(data,0);
+  pushU8(data,26);
+  pushU8(data,1);
+  pushU32(data, endFitTs);
 
-            const tcxContent = tcxHeader + tcxBody + tcxFooter;
-            
-            // Download initiieren
-            const blob = new Blob([tcxContent], { type: 'application/vnd.garmin.tcx+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `fake_activity_${startTime.toISOString().slice(0,10)}.tcx`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-    </script>
+  // Header (12 Byte, ohne Header-CRC)
+  const header = [];
+  header.push(12);
+  header.push(0x10);
+  pushU16(header, 100);
+  pushU32(header, data.length);
+  header.push(0x2E,0x46,0x49,0x54); // ".FIT"
+
+  const fileNoCrc = header.concat(data);
+  const crc = computeCrc(fileNoCrc);
+  const crcBytes = [];
+  pushU16(crcBytes, crc);
+  return fileNoCrc.concat(crcBytes);
+}
+
+function downloadBytes(bytesArray, filename){
+  const blob = new Blob([new Uint8Array(bytesArray)], { type:'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportFit(){
+  if(!routeGeometry || waypoints.length < 2){
+    alert('Bitte zuerst eine Route mit mindestens 2 Wegpunkten erstellen.');
+    return;
+  }
+  const speedKmh = parseFloat(speedInput().value);
+  if(!speedKmh || speedKmh <= 0){
+    alert('Bitte eine gültige Geschwindigkeit angeben.');
+    return;
+  }
+  const startVal = document.getElementById('startTime').value;
+  const startDate = startVal ? new Date(startVal) : new Date();
+  const trackPoints = generateTrackPoints(speedKmh);
+  if(trackPoints.length < 2){
+    alert('Route zu kurz für Export.');
+    return;
+  }
+  const mode = MODES[currentMode];
+  const bytes = buildFitFile(trackPoints, {
+    sport: mode.sport, subSport: mode.subSport, startDate,
+    hasElevation: !!elevFull, speedMs: speedKmh/3.6
+  });
+  downloadBytes(bytes, `route_${Date.now()}.fit`);
+}
+
+/* ===================== UI-Verdrahtung ===================== */
+function nowLocalISOString(){
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0,16);
+}
+
+function initUI(){
+  document.getElementById('startTime').value = nowLocalISOString();
+  document.getElementById('modeInfo').textContent = MODES[currentMode].info;
+
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentMode = btn.dataset.mode;
+      document.getElementById('modeInfo').textContent = MODES[currentMode].info;
+      speedInput().value = MODES[currentMode].defaultSpeed;
+      lastEdited = 'speed';
+      if(waypoints.length >= 2) updateRoute(); else recalcTimeSpeed();
+    });
+  });
+
+  speedInput().addEventListener('input', () => { lastEdited = 'speed'; recalcTimeSpeed(); });
+  durationInput().addEventListener('input', () => { lastEdited = 'duration'; recalcTimeSpeed(); });
+
+  document.getElementById('undoBtn').addEventListener('click', removeLastWaypoint);
+  document.getElementById('clearBtn').addEventListener('click', clearRoute);
+  document.getElementById('exportBtn').addEventListener('click', exportFit);
+}
+
+initMap();
+initUI();
+</script>
 </body>
 </html>
